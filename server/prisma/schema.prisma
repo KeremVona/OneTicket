@@ -5,10 +5,131 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// --- ENUMS ---
+
+enum Role {
+  EMPLOYEE
+  TECHNICIAN
+  DEPT_ADMIN
+  GLOBAL_ADMIN
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// --- TABLES ---
+
+model LdapConfig {
+  id           Int          @id @default(autoincrement())
+  domainName   String       @unique // e.g., "hospital.com"
+  serverUrl    String // ldaps://ldap.hospital.com
+  baseDn       String // dc=hospital,dc=com
+  bindUser     String
+  bindPassword String // Should be encrypted
+  departments  Department[]
+}
+
+model Department {
+  id              Int              @id @default(autoincrement())
+  name            String // e.g., "Medical Staff" or "IT Ops"
+  ldapConfigId    Int
+  ldapConfig      LdapConfig       @relation(fields: [ldapConfigId], references: [id])
+  users           User[]
+  tickets         Ticket[]
+  categories      Category[]
+  assignmentRules AssignmentRule[]
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  fullName     String
+  role         Role       @default(EMPLOYEE)
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  // Relations for tickets
+  madeTickets     Ticket[]  @relation("TicketMaker")
+  assignedTickets Ticket[]  @relation("TicketAssigned")
+  comments        Comment[]
+}
+
+model Category {
+  id              Int              @id @default(autoincrement())
+  name            String // e.g., Hardware, Software
+  departmentId    Int
+  department      Department       @relation(fields: [departmentId], references: [id])
+  tickets         Ticket[]
+  assignmentRules AssignmentRule[]
+}
+
+model Ticket {
+  id          Int          @id @default(autoincrement())
+  subject     String
+  description String       @db.Text
+  status      TicketStatus @default(OPEN)
+  priority    Priority     @default(MEDIUM)
+
+  // Department Silo
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  // Category
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  // Users
+  MakerId        String
+  Maker          User    @relation("TicketMaker", fields: [MakerId], references: [id])
+  assignedTechId String?
+  assignedTech   User?   @relation("TicketAssigned", fields: [assignedTechId], references: [id])
+
+  // Feedback loop
+  rating   Int? // 1-5 scale
+  feedback String? @db.Text
+
+  comments  Comment[]
+  madeAt    DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Comment {
+  id         Int      @id @default(autoincrement())
+  body       String   @db.Text
+  isInternal Boolean  @default(false) // Technicians can talk privately
+  ticketId   Int
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  madeAt     DateTime @default(now())
+}
+
+model AssignmentRule {
+  id           Int        @id @default(autoincrement())
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  emailDomain String? // e.g., "tech.company.com"
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id])
+
+  assignToId String // The ID of the technician this rule points to
 }
