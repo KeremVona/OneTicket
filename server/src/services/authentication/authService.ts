@@ -1,9 +1,10 @@
-import { type User } from "@prisma/client";
-import { Client } from "ldapts"; // LDAP client
 import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma.js";
+import { authenticateWithLdap } from "../../utils/authentication/ldapAuthentication.js";
+import { authenticateInDev } from "../../utils/authentication/devAuthentication.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret";
+const isDev = process.env.NODE_ENV !== "production";
 
 interface LoginDto {
   email: string;
@@ -22,16 +23,10 @@ export const loginUser = async ({ email, password }: LoginDto) => {
     throw new Error("Organization not recognized. Please contact IT.");
   }
 
-  const client = new Client({
-    url: ldapConfig.serverUrl,
-  });
-
-  try {
-    await client.bind(email, password);
-  } catch (err) {
-    throw new Error("Invalid credentials");
-  } finally {
-    await client.unbind();
+  if (isDev) {
+    await authenticateInDev(email, password);
+  } else {
+    await authenticateWithLdap(ldapConfig.serverUrl, email, password);
   }
 
   const defaultDept = await prisma.department.findFirst({
